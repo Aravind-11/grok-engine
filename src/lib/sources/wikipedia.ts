@@ -102,6 +102,7 @@ export async function wikiAsResults(query: string, parsed?: ParsedQuery): Promis
 }
 
 export async function getKnowledge(query: string, parsed?: ParsedQuery): Promise<KnowledgePanel | null> {
+  if (parsed?.intent === "shopping" || parsed?.intent === "weather") return null;
   if (parsed?.intent === "local" && parsed.localKind === "dining") return null;
   if (parsed?.intent === "local" && parsed.brand) {
     query = parsed.brand;
@@ -132,6 +133,11 @@ export async function getKnowledge(query: string, parsed?: ParsedQuery): Promise
     summary = (await wikiSummary(rows[1].title)) ?? summary;
   }
   if (!summary?.extract) return null;
+  const filmish = /film|movie|directed by|screenplay|starring|horror film/i.test(
+    `${summary.title} ${summary.description ?? ""} ${summary.extract}`,
+  );
+  const wantsFilm = /film|movie|watch|actor|director|imdb/i.test(query);
+  if (filmish && !wantsFilm) return null;
   if (parsed && !isRelevantTo(parsed, summary.title, summary.description ?? "", summary.extract)) {
     return null;
   }

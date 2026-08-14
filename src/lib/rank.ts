@@ -136,6 +136,10 @@ export function scoreResult(query: string, result: Omit<WebResult, "score">, par
     if (parsed.localKind === "poi" && /crash|arrest|sexual assault|killed|dies after|insurance/.test(hay) && parsed.brand && !hay.includes(parsed.brand)) {
       score -= 30;
     }
+  } else if (parsed?.intent === "shopping") {
+    const hay = `${title} ${snippet} ${host}`.toLowerCase();
+    if (/ikea|wayfair|amazon|target|homedepot|cb2|west elm|lighting|lamp|fixture|bedroom/.test(hay)) score += 18;
+    if (/imdb|rottentomatoes|wikipedia|film|movie|directed by|horror|screenplay/.test(hay)) score -= 45;
   } else if (parsed?.intent === "weather") {
     const hay = `${title} ${snippet} ${host}`.toLowerCase();
     if (/weather|forecast|sunny|sunshine|climate|temperature|heat/.test(hay)) score += 16;

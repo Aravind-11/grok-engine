@@ -1,4 +1,4 @@
-export type SearchIntent = "web" | "local" | "entity" | "question" | "weather";
+export type SearchIntent = "web" | "local" | "entity" | "question" | "weather" | "shopping";
 export type LocalKind = "dining" | "poi";
 
 export type ParsedQuery = {
@@ -239,6 +239,51 @@ const NEIGHBORHOODS: Record<string, string> = {
 
 const LOCATION_STOP = new Set(["near", "nearby", "around", "close", "locations", "location", "find"]);
 
+const SHOP_ITEMS = new Set([
+  "light",
+  "lights",
+  "lamp",
+  "lamps",
+  "lighting",
+  "bulb",
+  "bulbs",
+  "chandelier",
+  "sconce",
+  "table",
+  "tables",
+  "desk",
+  "desks",
+  "chair",
+  "chairs",
+  "sofa",
+  "couch",
+  "rug",
+  "rugs",
+  "curtain",
+  "curtains",
+  "mattress",
+  "pillow",
+  "bed",
+  "dresser",
+  "nightstand",
+  "shelf",
+  "shelves",
+]);
+
+const SHOP_ROOMS = new Set([
+  "bedroom",
+  "kitchen",
+  "bathroom",
+  "living",
+  "lounge",
+  "office",
+  "patio",
+  "outdoor",
+  "dining",
+  "nursery",
+  "hallway",
+]);
+
 const WEATHER_HINTS = new Set([
   "weather",
   "forecast",
@@ -308,7 +353,8 @@ export function overlapScore(queryTokens: string[], ...parts: string[]): number 
 
 export function isRelevant(queryTokens: string[], ...parts: string[]): boolean {
   if (queryTokens.length <= 1) return overlapScore(queryTokens, ...parts) > 0;
-  return overlapScore(queryTokens, ...parts) >= (queryTokens.length >= 3 ? 0.4 : 0.5);
+  if (queryTokens.length === 2) return overlapScore(queryTokens, ...parts) >= 1;
+  return overlapScore(queryTokens, ...parts) >= 0.4;
 }
 
 export function requiredPhrases(parsed: ParsedQuery): string[] {
@@ -364,8 +410,14 @@ export function parseQuery(raw: string): ParsedQuery {
 
   let intent: SearchIntent = "web";
   let localKind: LocalKind | undefined;
+  const hasShopItem = expanded.some((t) => SHOP_ITEMS.has(t));
+  const hasShopRoom = expanded.some((t) => SHOP_ROOMS.has(t));
+  const shopFor = /\b(lights?|lamps?|lighting|tables?|chairs?|sofas?|rugs?)\s+for\s+\w+/i.test(branded);
+
   if (hasWeatherHint && place) {
     intent = "weather";
+  } else if ((hasShopItem && hasShopRoom) || shopFor) {
+    intent = "shopping";
   } else if ((hasLocalHint || whereIn || brand) && place) {
     intent = "local";
     localKind = hasFoodHint ? "dining" : "poi";
@@ -391,23 +443,33 @@ export function parseQuery(raw: string): ParsedQuery {
     if (!/\brestaurant/.test(topic)) topic = `${topic} restaurants`.trim();
   }
 
+  if (intent === "shopping" && hasShopRoom && hasShopItem) {
+    const room = expanded.find((t) => SHOP_ROOMS.has(t));
+    const item = expanded.find((t) => SHOP_ITEMS.has(t));
+    topic = `${room} ${item === "lights" || item === "light" ? "lighting" : item}`;
+  }
+
   const search =
     intent === "weather" && place
       ? `${place} sunny day weather`
-      : intent === "local" && place
-        ? [topic || contents.join(" "), place].filter(Boolean).join(" ")
-        : brand
-          ? [brand.name, ...contents.filter((t) => t !== brand.name)].join(" ")
-          : contents.join(" ") || original;
+      : intent === "shopping"
+        ? topic || contents.join(" ")
+        : intent === "local" && place
+          ? [topic || contents.join(" "), place].filter(Boolean).join(" ")
+          : brand
+            ? [brand.name, ...contents.filter((t) => t !== brand.name)].join(" ")
+            : contents.join(" ") || original;
 
   const image =
     intent === "weather" && place
       ? `${place} sunny day skyline sunshine`
-      : brand
-        ? `${brand.name} ${place ?? ""}`.trim()
-        : intent === "local"
-          ? `${topic || "restaurants"} ${place ?? ""}`.trim()
-          : search;
+      : intent === "shopping"
+        ? `${topic || contents.join(" ")} interior`
+        : brand
+          ? `${brand.name} ${place ?? ""}`.trim()
+          : intent === "local"
+            ? `${topic || "restaurants"} ${place ?? ""}`.trim()
+            : search;
 
   const tokens = contentTokens(search);
   if (brand && !tokens.includes(brand.name)) tokens.unshift(brand.name);

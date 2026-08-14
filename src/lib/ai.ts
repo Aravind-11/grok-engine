@@ -10,6 +10,11 @@ function extractiveOverview(
   if (knowledge?.extract) {
     return knowledge.extract.split(/(?<=[.!?])\s+/).slice(0, 3).join(" ");
   }
+  if (parsed?.intent === "shopping") {
+    const titles = results.slice(0, 4).map((r) => r.title.replace(/\s+[-|].*$/, ""));
+    if (!titles.length) return "";
+    return `Shop ${parsed.topic || query}: ${titles.join("; ")}.`;
+  }
   const top = results
     .filter((r) => {
       if (!r.snippet) return false;

@@ -59,6 +59,14 @@ function peopleAlsoAsk(
   wiki: { title: string; snippet: string }[],
 ): PeopleAlsoAsk[] {
   const items: PeopleAlsoAsk[] = [];
+  if (parsed.intent === "shopping") {
+    const topic = parsed.topic || query;
+    items.push({
+      question: `What ${topic} should I buy?`,
+      answer: `Compare styles, sizes, and prices in the product results below.`,
+    });
+    return items;
+  }
   if (parsed.intent === "weather" && parsed.place) {
     items.push(
       {
@@ -136,7 +144,7 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
 
   const instantP = resolveInstant(query, parsed);
   const knowledgeP =
-    parsed.intent === "weather" || parsed.intent === "local"
+    parsed.intent === "weather" || parsed.intent === "local" || parsed.intent === "shopping"
       ? Promise.resolve(null)
       : parsed.brand && parsed.contentTokens.some((t) => t !== parsed.brand)
         ? Promise.resolve(null)
@@ -146,6 +154,15 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
   const variants =
     parsed.intent === "weather" && parsed.place
       ? Array.from(new Set([`${parsed.place} weather`, `${parsed.place} sunny day`, `what a sunny day in ${parsed.place} looks like`]))
+      : parsed.intent === "shopping"
+        ? Array.from(
+            new Set([
+              parsed.topic || lookup,
+              `${parsed.topic || lookup} lamps`,
+              `${parsed.topic || lookup} site:ikea.com`,
+              `${parsed.topic || lookup} site:wayfair.com`,
+            ]),
+          )
       : parsed.intent === "local" && parsed.place
         ? Array.from(
             new Set(
@@ -177,15 +194,19 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
       ? Promise.all(variants.map((v) => withTimeout(searchBingMany(v), 8000, []))).then((rows) => rows.flat())
       : Promise.resolve([]);
   const hnP =
-    tab === "all" && parsed.intent !== "local" && parsed.intent !== "weather"
+    tab === "all" && parsed.intent !== "local" && parsed.intent !== "weather" && parsed.intent !== "shopping"
       ? withTimeout(searchHn(lookup), 4500, [])
       : Promise.resolve([]);
   const wikiP =
-    parsed.intent === "weather" || (parsed.intent === "local" && parsed.localKind === "dining")
+    parsed.intent === "weather" ||
+    parsed.intent === "shopping" ||
+    (parsed.intent === "local" && parsed.localKind === "dining")
       ? Promise.resolve([])
       : withTimeout(wikiAsResults(parsed.brand || lookup, parsed), 5000, []);
   const wikiRawP =
-    parsed.intent === "weather" || (parsed.intent === "local" && parsed.localKind === "dining")
+    parsed.intent === "weather" ||
+    parsed.intent === "shopping" ||
+    (parsed.intent === "local" && parsed.localKind === "dining")
       ? Promise.resolve([])
       : withTimeout(wikiSearch(parsed.brand || lookup, 12), 4500, []);
   const imageQuery =
@@ -330,7 +351,7 @@ export async function runSearch(rawQuery: string, tab: Tab = "all", page = 1): P
     };
   }
 
-  const gathered = await cached(`search:v13:${tab}:${query}`, 45_000, () => gather(query, tab));
+  const gathered = await cached(`search:v15:${tab}:${query}`, 45_000, () => gather(query, tab));
   const start = (safePage - 1) * PAGE_SIZE;
   const { allResults, ...rest } = gathered;
 
