@@ -1,12 +1,27 @@
+import { isRelevant, type ParsedQuery } from "./query";
 import type { KnowledgePanel, WebResult } from "./types";
 
-function extractiveOverview(query: string, knowledge: KnowledgePanel | null, results: WebResult[]): string {
-  if (knowledge?.extract) {
-    const sentences = knowledge.extract.split(/(?<=[.!?])\s+/).slice(0, 3).join(" ");
-    return sentences;
+function extractiveOverview(
+  query: string,
+  knowledge: KnowledgePanel | null,
+  results: WebResult[],
+  parsed?: ParsedQuery,
+): string {
+  const tokens = parsed?.contentTokens ?? [];
+  if (
+    knowledge?.extract &&
+    (!tokens.length || isRelevant(tokens, knowledge.title, knowledge.description, knowledge.extract))
+  ) {
+    return knowledge.extract.split(/(?<=[.!?])\s+/).slice(0, 3).join(" ");
   }
-  const top = results.slice(0, 3).filter((r) => r.snippet);
+  const top = results
+    .filter((r) => r.snippet && (!tokens.length || isRelevant(tokens, r.title, r.snippet)))
+    .slice(0, 4);
   if (!top.length) return "";
+  if (parsed?.intent === "local" && parsed.place) {
+    const titles = top.map((r) => r.title.replace(/\s+[-|].*$/, "")).slice(0, 4);
+    return `Guides for ${parsed.topic || query} in ${parsed.place}: ${titles.join("; ")}.`;
+  }
   return top.map((r) => r.snippet).join(" ");
 }
 
@@ -14,8 +29,9 @@ export function buildExtractiveOverview(
   query: string,
   knowledge: KnowledgePanel | null,
   results: WebResult[],
+  parsed?: ParsedQuery,
 ) {
-  const text = extractiveOverview(query, knowledge, results);
+  const text = extractiveOverview(query, knowledge, results, parsed);
   if (!text) return null;
   return {
     text,

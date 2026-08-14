@@ -2,6 +2,7 @@ import { buildExtractiveOverview } from "./ai";
 import { applyCrawl, crawlExpand } from "./crawl";
 import { cached, clampQuery, withTimeout } from "./http";
 import { definitionQuery, tryCalc, tryConvert, tryTime, weatherPlace } from "./instant";
+import { isRelevant, parseQuery, type ParsedQuery } from "./query";
 import { rankAndDedupe } from "./rank";
 import { searchBingMany } from "./sources/bing";
 import { searchWeb, searchWebMany, suggest } from "./sources/ddg";
@@ -31,16 +32,17 @@ async function resolveInstant(query: string): Promise<InstantAnswer | null> {
   return null;
 }
 
-async function relatedSearches(query: string): Promise<string[]> {
+async function relatedSearches(query: string, parsed: ParsedQuery): Promise<string[]> {
   const [ac, wiki] = await Promise.all([
-    withTimeout(suggest(query), 2500, [] as string[]),
-    withTimeout(wikiSearch(query, 12), 2500, [] as { title: string; snippet: string }[]),
+    withTimeout(suggest(parsed.search), 2500, [] as string[]),
+    withTimeout(wikiSearch(parsed.search, 12), 2500, [] as { title: string; snippet: string }[]),
   ]);
   const out: string[] = [];
   const seen = new Set([query.toLowerCase()]);
   for (const item of [...ac, ...wiki.map((w) => w.title)]) {
     const key = item.toLowerCase();
     if (!item || seen.has(key)) continue;
+    if (parsed.contentTokens.length && !isRelevant(parsed.contentTokens, item)) continue;
     seen.add(key);
     out.push(item);
     if (out.length >= 12) break;
@@ -50,11 +52,26 @@ async function relatedSearches(query: string): Promise<string[]> {
 
 function peopleAlsoAsk(
   query: string,
+  parsed: ParsedQuery,
   knowledge: SearchResponse["knowledge"],
   wiki: { title: string; snippet: string }[],
 ): PeopleAlsoAsk[] {
   const items: PeopleAlsoAsk[] = [];
-  if (knowledge?.extract) {
+  if (parsed.intent === "local" && parsed.place) {
+    const topic = parsed.topic || "places";
+    items.push(
+      {
+        question: `What are the best ${topic} in ${parsed.place}?`,
+        answer: `See the guides and lists below for current ${topic} in ${parsed.place}.`,
+      },
+      {
+        question: `Where should I go for ${topic} in ${parsed.place}?`,
+        answer: `Neighborhood guides, critic lists, and review sites in the results are the most reliable starting points.`,
+      },
+    );
+    return items;
+  }
+  if (knowledge?.extract && isRelevant(parsed.contentTokens, knowledge.title, knowledge.extract)) {
     items.push({
       question: `What is ${knowledge.title}?`,
       answer: knowledge.extract,
@@ -63,6 +80,7 @@ function peopleAlsoAsk(
   for (const row of wiki) {
     if (!row.snippet) continue;
     if (knowledge && row.title === knowledge.title) continue;
+    if (!isRelevant(parsed.contentTokens, row.title, row.snippet)) continue;
     items.push({
       question: `What is ${row.title}?`,
       answer: row.snippet,
@@ -85,34 +103,49 @@ type Gathered = Omit<SearchResponse, "page" | "results" | "resultCount"> & {
 async function gather(query: string, tab: Tab): Promise<Gathered> {
   const started = Date.now();
   const wantAll = tab === "all";
+  const parsed = parseQuery(query);
+  const lookup = parsed.search;
 
   const instantP = resolveInstant(query);
-  const knowledgeP = wantAll || tab === "images" ? withTimeout(getKnowledge(query), 4500, null) : Promise.resolve(null);
+  const knowledgeP =
+    wantAll || tab === "images" ? withTimeout(getKnowledge(lookup, parsed), 4500, null) : Promise.resolve(null);
   const webP =
     tab === "all"
-      ? withTimeout(searchWebMany(query, 4), 9000, [])
+      ? withTimeout(searchWebMany(lookup, 4), 9000, [])
       : Promise.resolve([]);
-  const bingP = tab === "all" ? withTimeout(searchBingMany(query), 8000, []) : Promise.resolve([]);
-  const hnP = tab === "all" ? withTimeout(searchHn(query), 4500, []) : Promise.resolve([]);
-  const wikiP = withTimeout(wikiAsResults(query), 5000, []);
-  const wikiRawP = withTimeout(wikiSearch(query, 12), 4500, []);
+  const bingP = tab === "all" ? withTimeout(searchBingMany(lookup), 8000, []) : Promise.resolve([]);
+  const hnP =
+    tab === "all" && parsed.intent !== "local" ? withTimeout(searchHn(lookup), 4500, []) : Promise.resolve([]);
+  const wikiP =
+    parsed.intent === "local" ? Promise.resolve([]) : withTimeout(wikiAsResults(lookup, parsed), 5000, []);
+  const wikiRawP =
+    parsed.intent === "local"
+      ? Promise.resolve([])
+      : withTimeout(wikiSearch(lookup, 12), 4500, []);
   const imagesP =
     tab === "all" || tab === "images"
-      ? withTimeout(searchImages(query, tab === "images" ? 48 : 12), 7000, []).then((rows) =>
-          tab === "images" ? rows : rows.slice(0, 12),
-        )
+      ? withTimeout(searchImages(parsed.image, tab === "images" ? 48 : 12), 7000, []).then((rows) => {
+          const topicBits = parsed.contentTokens.filter(
+            (t) => t !== "los" && t !== "angeles" && !(parsed.place ?? "").includes(t),
+          );
+          const filtered = rows.filter((img) =>
+            isRelevant(topicBits.length ? topicBits : parsed.contentTokens, img.title),
+          );
+          const picked = (filtered.length >= 3 ? filtered : rows).slice(0, tab === "images" ? 48 : 12);
+          return picked;
+        })
       : Promise.resolve([]);
   const newsP =
     tab === "all" || tab === "news"
-      ? withTimeout(searchNews(query, tab === "news" ? 40 : 6), 7000, []).then((rows) =>
+      ? withTimeout(searchNews(lookup, tab === "news" ? 40 : 6), 7000, []).then((rows) =>
           tab === "news" ? rows : rows.slice(0, 6),
         )
       : Promise.resolve([]);
   const videosP =
     tab === "videos" || tab === "all"
-      ? withTimeout(searchVideos(query), 9000, [])
+      ? withTimeout(searchVideos(lookup), 9000, [])
       : Promise.resolve([]);
-  const relatedP = relatedSearches(query);
+  const relatedP = relatedSearches(query, parsed);
 
   const [instant, knowledge, web, bing, hn, wiki, wikiRaw, images, news, videos, related] = await Promise.all([
     instantP,
@@ -139,14 +172,15 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
 
   if (wantAll && seed.length) {
     const { enriched, discovered } = await withTimeout(
-      crawlExpand(query, seed, 14),
+      crawlExpand(lookup, seed, 14),
       7000,
       { enriched: new Map(), discovered: [] as Omit<WebResult, "score">[] },
     );
-    pool = [...applyCrawl(seed, enriched), ...discovered];
+    const extra = discovered.filter((row) => isRelevant(parsed.contentTokens, row.title, row.url, row.snippet));
+    pool = [...applyCrawl(seed, enriched), ...extra];
   }
 
-  const merged = rankAndDedupe(query, pool);
+  const merged = rankAndDedupe(lookup, pool, parsed);
 
   let finalInstant = instant;
   if (!finalInstant && !knowledge) {
@@ -159,7 +193,7 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
   const skipOverview = Boolean(finalInstant);
   const overview =
     tab === "all" && !skipOverview
-      ? buildExtractiveOverview(query, knowledge, merged.slice(0, 8))
+      ? buildExtractiveOverview(query, knowledge, merged.slice(0, 8), parsed)
       : null;
 
   return {
@@ -172,7 +206,7 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
     news,
     videos: videos.slice(0, tab === "videos" ? 24 : 6),
     related,
-    peopleAlsoAsk: tab === "all" ? peopleAlsoAsk(query, knowledge, wikiRaw) : [],
+    peopleAlsoAsk: tab === "all" ? peopleAlsoAsk(query, parsed, knowledge, wikiRaw) : [],
     overview,
     allResults: merged,
   };
@@ -201,7 +235,7 @@ export async function runSearch(rawQuery: string, tab: Tab = "all", page = 1): P
     };
   }
 
-  const gathered = await cached(`search:v4:${tab}:${query}`, 45_000, () => gather(query, tab));
+  const gathered = await cached(`search:v6:${tab}:${query}`, 45_000, () => gather(query, tab));
   const start = (safePage - 1) * PAGE_SIZE;
   const { allResults, ...rest } = gathered;
 

@@ -1,3 +1,5 @@
+import type { ParsedQuery } from "./query";
+import { contentTokens } from "./query";
 import type { WebResult } from "./types";
 import { hostnameOf } from "./http";
 
@@ -48,39 +50,69 @@ function authority(url: string): number {
   return 0;
 }
 
-function tokens(q: string): string[] {
-  return q
-    .toLowerCase()
-    .split(/[^a-z0-9]+/i)
-    .filter((t) => t.length > 1);
-}
+const LOCAL_HOSTS = [
+  "yelp.com",
+  "eater.com",
+  "timeout.com",
+  "infatuation.com",
+  "tripadvisor.com",
+  "opentable.com",
+  "resy.com",
+  "timeout.com",
+  "latimes.com",
+  "cbslocal.com",
+  "thrillist.com",
+];
 
-export function scoreResult(query: string, result: Omit<WebResult, "score">): number {
-  const q = query.toLowerCase();
+export function scoreResult(query: string, result: Omit<WebResult, "score">, parsed?: ParsedQuery): number {
+  const q = (parsed?.search ?? query).toLowerCase();
   const title = result.title.toLowerCase();
   const snippet = result.snippet.toLowerCase();
   const host = hostnameOf(result.url);
-  const words = tokens(query);
+  const words = parsed?.contentTokens?.length ? parsed.contentTokens : contentTokens(query);
   let score = 1 + authority(result.url);
 
   if (title === q) score += 24;
   else if (title.startsWith(q)) score += 14;
   else if (title.includes(q)) score += 8;
 
+  let hits = 0;
   for (const w of words) {
-    if (title.includes(w)) score += 3;
-    if (snippet.includes(w)) score += 1;
+    if (title.includes(w)) {
+      score += 5;
+      hits += 1;
+    }
+    if (snippet.includes(w)) {
+      score += 2;
+      hits += 1;
+    }
     if (host === w || host.startsWith(`${w}.`)) score += 22;
     else if (host.includes(w)) score += 6;
   }
 
-  if (result.source === "wikipedia") score += 2;
+  if (words.length >= 2 && hits === 0) score -= 24;
+  else if (words.length >= 3 && hits < 2) score -= 12;
+
+  if (parsed?.intent === "local") {
+    if (LOCAL_HOSTS.some((h) => host.endsWith(h))) score += 16;
+    if (/restaurant|trattoria|osteria|italian|los angeles|\bla\b/.test(title + " " + snippet)) score += 8;
+    if (result.source === "wikipedia" || host.includes("wikipedia.org")) score -= 16;
+    const topicBits = (parsed.topic ?? "").split(/\s+/).filter((t) => t.length > 2 && t !== "los" && t !== "angeles");
+    if (topicBits.length && !topicBits.some((t) => title.includes(t) || snippet.includes(t))) score -= 18;
+  } else if (result.source === "wikipedia") {
+    score += 2;
+  }
+
   if (result.crawled && result.snippet.length > 80) score += 3;
   if (host.endsWith(".com") && words.some((w) => host.includes(w))) score += 5;
   return score;
 }
 
-export function rankAndDedupe(query: string, items: Omit<WebResult, "score">[]): WebResult[] {
+export function rankAndDedupe(
+  query: string,
+  items: Omit<WebResult, "score">[],
+  parsed?: ParsedQuery,
+): WebResult[] {
   const seen = new Set<string>();
   const scored: WebResult[] = [];
   for (const item of items) {
@@ -93,7 +125,7 @@ export function rankAndDedupe(query: string, items: Omit<WebResult, "score">[]):
     }
     if (seen.has(key)) continue;
     seen.add(key);
-    scored.push({ ...item, score: scoreResult(query, item) });
+    scored.push({ ...item, score: scoreResult(query, item, parsed) });
   }
   scored.sort((a, b) => b.score - a.score);
   return scored;

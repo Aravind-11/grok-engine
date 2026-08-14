@@ -1,3 +1,5 @@
+import type { ParsedQuery } from "../query";
+import { isRelevant } from "../query";
 import type { KnowledgePanel, WebResult } from "../types";
 import { cached, displayPath, faviconFor, fetchJson, stripTags } from "../http";
 import { wikidataFacts } from "./wikidata";
@@ -59,7 +61,7 @@ type WikiExtractResponse = {
   };
 };
 
-export async function wikiAsResults(query: string): Promise<Omit<WebResult, "score">[]> {
+export async function wikiAsResults(query: string, parsed?: ParsedQuery): Promise<Omit<WebResult, "score">[]> {
   return cached(`wiki-ext:${query}`, 120_000, async () => {
     try {
       const data = await fetchJson<WikiExtractResponse>(
@@ -71,6 +73,11 @@ export async function wikiAsResults(query: string): Promise<Omit<WebResult, "sco
       );
       return pages
         .filter((page) => page.title && page.fullurl)
+        .filter((page) =>
+          parsed
+            ? isRelevant(parsed.contentTokens, page.title ?? "", page.extract ?? "")
+            : true,
+        )
         .map((page) => ({
           title: `${page.title} - Wikipedia`,
           url: page.fullurl as string,
@@ -96,11 +103,14 @@ export async function wikiAsResults(query: string): Promise<Omit<WebResult, "sco
   });
 }
 
-export async function getKnowledge(query: string): Promise<KnowledgePanel | null> {
+export async function getKnowledge(query: string, parsed?: ParsedQuery): Promise<KnowledgePanel | null> {
+  if (parsed?.intent === "local") return null;
+
   const rows = await wikiSearch(query, 8);
   if (!rows.length) return null;
 
   const q = query.toLowerCase().trim();
+  const tokens = parsed?.contentTokens ?? [];
   const preferred =
     rows.find((r) => r.title.toLowerCase() === q) ??
     rows.find((r) => r.title.toLowerCase().replace(/,/g, "") === q) ??
@@ -109,13 +119,20 @@ export async function getKnowledge(query: string): Promise<KnowledgePanel | null
       return t.startsWith(`${q},`) || t.startsWith(`${q} (`) || t.startsWith(`${q} inc`);
     }) ??
     rows.find((r) => r.title.toLowerCase().startsWith(q) && r.title.length <= q.length + 14) ??
-    rows[0];
+    rows.find((r) => isRelevant(tokens, r.title, r.snippet)) ??
+    null;
+
+  if (!preferred) return null;
+  if (tokens.length && !isRelevant(tokens, preferred.title, preferred.snippet)) return null;
 
   let summary = await wikiSummary(preferred.title);
   if (summary?.type === "disambiguation" && rows[1]) {
     summary = (await wikiSummary(rows[1].title)) ?? summary;
   }
   if (!summary?.extract) return null;
+  if (tokens.length && !isRelevant(tokens, summary.title, summary.description ?? "", summary.extract)) {
+    return null;
+  }
 
   const url =
     summary.content_urls?.desktop?.page ??
