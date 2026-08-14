@@ -1,4 +1,4 @@
-export type SearchIntent = "web" | "local" | "entity" | "question";
+export type SearchIntent = "web" | "local" | "entity" | "question" | "weather";
 export type LocalKind = "dining" | "poi";
 
 export type ParsedQuery = {
@@ -125,6 +125,10 @@ const STOP = new Set([
   "give",
   "list",
   "looking",
+  "look",
+  "looks",
+  "like",
+  "likes",
 ]);
 
 const PLACES: Record<string, string> = {
@@ -234,6 +238,26 @@ const NEIGHBORHOODS: Record<string, string> = {
 
 const LOCATION_STOP = new Set(["near", "nearby", "around", "close", "locations", "location", "find"]);
 
+const WEATHER_HINTS = new Set([
+  "weather",
+  "forecast",
+  "temperature",
+  "sunny",
+  "sunshine",
+  "sun",
+  "rain",
+  "rainy",
+  "cloudy",
+  "clouds",
+  "hot",
+  "cold",
+  "humid",
+  "humidity",
+  "climate",
+  "storm",
+  "snow",
+]);
+
 export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
@@ -311,9 +335,15 @@ export function parseQuery(raw: string): ParsedQuery {
     (expanded.includes("los") && expanded.includes("angeles") ? "los angeles" : undefined) ??
     neighborhood;
 
+  const hasWeatherHint =
+    expanded.some((t) => WEATHER_HINTS.has(t)) ||
+    /\blook(?:s)? like\b|\bforecast\b|\btemperature\b/i.test(branded);
+
   let intent: SearchIntent = "web";
   let localKind: LocalKind | undefined;
-  if ((hasLocalHint || whereIn || brand) && place) {
+  if (hasWeatherHint && place) {
+    intent = "weather";
+  } else if ((hasLocalHint || whereIn || brand) && place) {
     intent = "local";
     localKind = hasFoodHint ? "dining" : "poi";
   } else if (whereIn || (brand && hasLocalHint)) {
@@ -339,13 +369,22 @@ export function parseQuery(raw: string): ParsedQuery {
   }
 
   const search =
-    intent === "local" && place
-      ? [topic || contents.join(" "), place].filter(Boolean).join(" ")
-      : brand
-        ? [brand.name, ...contents.filter((t) => t !== brand.name)].join(" ")
-        : contents.join(" ") || original;
+    intent === "weather" && place
+      ? `${place} sunny day weather`
+      : intent === "local" && place
+        ? [topic || contents.join(" "), place].filter(Boolean).join(" ")
+        : brand
+          ? [brand.name, ...contents.filter((t) => t !== brand.name)].join(" ")
+          : contents.join(" ") || original;
 
-  const image = brand ? `${brand.name} ${place ?? ""}`.trim() : intent === "local" ? `${topic || "restaurants"} ${place ?? ""}`.trim() : search;
+  const image =
+    intent === "weather" && place
+      ? `${place} sunny day skyline sunshine`
+      : brand
+        ? `${brand.name} ${place ?? ""}`.trim()
+        : intent === "local"
+          ? `${topic || "restaurants"} ${place ?? ""}`.trim()
+          : search;
 
   const tokens = contentTokens(search);
   if (brand && !tokens.includes(brand.name)) tokens.unshift(brand.name);

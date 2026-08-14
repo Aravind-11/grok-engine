@@ -126,6 +126,11 @@ export function scoreResult(query: string, result: Omit<WebResult, "score">, par
     if (parsed.localKind === "poi" && /crash|arrest|sexual assault|killed|dies after|insurance/.test(hay) && parsed.brand && !hay.includes(parsed.brand)) {
       score -= 30;
     }
+  } else if (parsed?.intent === "weather") {
+    const hay = `${title} ${snippet} ${host}`.toLowerCase();
+    if (/weather|forecast|sunny|sunshine|climate|temperature|heat/.test(hay)) score += 16;
+    if (/sunland|tujunga|herald examiner|newspaper|robot|seahawks/.test(hay)) score -= 30;
+    if (result.source === "wikipedia" || host.includes("wikipedia.org")) score -= 12;
   } else if (result.source === "wikipedia") {
     score += 2;
   }

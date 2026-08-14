@@ -18,13 +18,14 @@ import type { InstantAnswer, PeopleAlsoAsk, SearchResponse, Tab, WebResult } fro
 
 export const PAGE_SIZE = 20;
 
-async function resolveInstant(query: string): Promise<InstantAnswer | null> {
+async function resolveInstant(query: string, parsed?: ParsedQuery): Promise<InstantAnswer | null> {
   const calc = tryCalc(query);
   if (calc) return calc;
   const convert = tryConvert(query);
   if (convert) return convert;
   const time = tryTime(query);
   if (time) return time;
+  if (parsed?.intent === "weather" && parsed.place) return getWeather(parsed.place);
   const place = weatherPlace(query);
   if (place) return getWeather(place);
   const explicitDefine = /^(define|definition of|meaning of|what does)\b/i.test(query);
@@ -58,6 +59,19 @@ function peopleAlsoAsk(
   wiki: { title: string; snippet: string }[],
 ): PeopleAlsoAsk[] {
   const items: PeopleAlsoAsk[] = [];
+  if (parsed.intent === "weather" && parsed.place) {
+    items.push(
+      {
+        question: `What is the weather in ${parsed.place}?`,
+        answer: `See the live conditions card and forecast stories for ${parsed.place}.`,
+      },
+      {
+        question: `What does a sunny day in ${parsed.place} look like?`,
+        answer: `Open the image results for skyline, beach, and sunshine photos from ${parsed.place}.`,
+      },
+    );
+    return items;
+  }
   if (parsed.intent === "local" && parsed.place) {
     const topic = parsed.topic || "places";
     if (parsed.localKind === "poi") {
@@ -120,19 +134,25 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
   const parsed = parseQuery(query);
   const lookup = parsed.search;
 
-  const instantP = resolveInstant(query);
+  const instantP = resolveInstant(query, parsed);
   const knowledgeP =
-    wantAll || tab === "images" ? withTimeout(getKnowledge(lookup, parsed), 4500, null) : Promise.resolve(null);
+    parsed.intent === "weather" || parsed.intent === "local"
+      ? Promise.resolve(null)
+      : wantAll || tab === "images"
+        ? withTimeout(getKnowledge(lookup, parsed), 4500, null)
+        : Promise.resolve(null);
   const variants =
-    parsed.intent === "local" && parsed.place
-      ? Array.from(
-          new Set(
-            parsed.localKind === "poi"
-              ? [lookup, `${parsed.topic || lookup} locations ${parsed.place}`, `${lookup} los angeles`]
-              : [lookup, `best ${lookup}`, query],
-          ),
-        )
-      : [lookup];
+    parsed.intent === "weather" && parsed.place
+      ? Array.from(new Set([`${parsed.place} weather`, `${parsed.place} sunny day`, `what a sunny day in ${parsed.place} looks like`]))
+      : parsed.intent === "local" && parsed.place
+        ? Array.from(
+            new Set(
+              parsed.localKind === "poi"
+                ? [lookup, `${parsed.topic || lookup} locations ${parsed.place}`, `${lookup} los angeles`]
+                : [lookup, `best ${lookup}`, query],
+            ),
+          )
+        : [lookup];
   const localSites =
     parsed.intent === "local" && parsed.place
       ? parsed.localKind === "poi"
@@ -153,26 +173,37 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
       ? Promise.all(variants.map((v) => withTimeout(searchBingMany(v), 8000, []))).then((rows) => rows.flat())
       : Promise.resolve([]);
   const hnP =
-    tab === "all" && parsed.intent !== "local" ? withTimeout(searchHn(lookup), 4500, []) : Promise.resolve([]);
+    tab === "all" && parsed.intent !== "local" && parsed.intent !== "weather"
+      ? withTimeout(searchHn(lookup), 4500, [])
+      : Promise.resolve([]);
   const wikiP =
-    parsed.intent === "local" && parsed.localKind === "dining"
+    parsed.intent === "weather" || (parsed.intent === "local" && parsed.localKind === "dining")
       ? Promise.resolve([])
       : withTimeout(wikiAsResults(parsed.brand || lookup, parsed), 5000, []);
   const wikiRawP =
-    parsed.intent === "local" && parsed.localKind === "dining"
+    parsed.intent === "weather" || (parsed.intent === "local" && parsed.localKind === "dining")
       ? Promise.resolve([])
       : withTimeout(wikiSearch(parsed.brand || lookup, 12), 4500, []);
+  const imageQuery =
+    parsed.intent === "weather" && parsed.place ? `${parsed.place} skyline` : parsed.image;
   const imagesP =
     tab === "all" || tab === "images"
-      ? withTimeout(searchImages(parsed.image, tab === "images" ? 48 : 12), 7000, []).then((rows) => {
+      ? withTimeout(searchImages(imageQuery, tab === "images" ? 48 : 16), 7000, []).then((rows) => {
           const topicBits = parsed.contentTokens.filter(
             (t) => t !== "los" && t !== "angeles" && !(parsed.place ?? "").includes(t),
           );
           const filtered = rows.filter((img) => {
             if (parsed.brand && !img.title.toLowerCase().includes(parsed.brand)) return false;
+            if (parsed.intent === "weather") {
+              const t = img.title.toLowerCase();
+              return /sun|sky|skyline|beach|downtown|palm|horizon|cloud|weather|los angeles|hollywood|california/.test(t);
+            }
             return isRelevant(topicBits.length ? topicBits : parsed.contentTokens, img.title);
           });
-          const picked = (filtered.length ? filtered : parsed.brand ? [] : rows).slice(0, tab === "images" ? 48 : 12);
+          const picked = (filtered.length ? filtered : parsed.brand || parsed.intent === "weather" ? [] : rows).slice(
+            0,
+            tab === "images" ? 48 : 12,
+          );
           return picked;
         })
       : Promise.resolve([]);
@@ -181,8 +212,10 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
       ? withTimeout(searchNews(lookup, tab === "news" ? 40 : 8), 7000, []).then((rows) => {
           const filtered = parsed.brand
             ? rows.filter((row) => isRelevant([parsed.brand!], row.title, row.snippet))
-            : rows;
-          return (filtered.length ? filtered : parsed.localKind === "poi" ? [] : rows).slice(
+            : parsed.intent === "weather"
+              ? rows.filter((row) => /weather|forecast|heat|sunny|climate|temperature/i.test(`${row.title} ${row.snippet}`))
+              : rows;
+          return (filtered.length ? filtered : parsed.localKind === "poi" ? [] : parsed.intent === "weather" ? rows.slice(0, 3) : rows).slice(
             0,
             tab === "news" ? 40 : 6,
           );
@@ -293,7 +326,7 @@ export async function runSearch(rawQuery: string, tab: Tab = "all", page = 1): P
     };
   }
 
-  const gathered = await cached(`search:v9:${tab}:${query}`, 45_000, () => gather(query, tab));
+  const gathered = await cached(`search:v11:${tab}:${query}`, 45_000, () => gather(query, tab));
   const start = (safePage - 1) * PAGE_SIZE;
   const { allResults, ...rest } = gathered;
 
