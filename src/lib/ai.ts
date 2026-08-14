@@ -20,7 +20,8 @@ function extractiveOverview(
   if (!top.length) return "";
   if (parsed?.intent === "local" && parsed.place) {
     const titles = top.map((r) => r.title.replace(/\s+[-|].*$/, "")).slice(0, 4);
-    return `Guides for ${parsed.topic || query} in ${parsed.place}: ${titles.join("; ")}.`;
+    const label = parsed.localKind === "poi" ? "Locations" : "Guides";
+    return `${label} for ${parsed.topic || query} in ${parsed.place}: ${titles.join("; ")}.`;
   }
   return top.map((r) => r.snippet).join(" ");
 }

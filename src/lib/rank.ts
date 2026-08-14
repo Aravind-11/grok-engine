@@ -93,6 +93,17 @@ export function scoreResult(query: string, result: Omit<WebResult, "score">, par
   if (words.length >= 2 && hits === 0) score -= 24;
   else if (words.length >= 3 && hits < 2) score -= 12;
 
+  if (parsed?.brand) {
+    const brand = parsed.brand.toLowerCase();
+    const compact = brand.replace(/\s+/g, "");
+    const hayBrand = `${title} ${snippet} ${host} ${result.url}`.toLowerCase();
+    if (hayBrand.includes(brand) || hayBrand.includes(compact)) score += 20;
+    if (parsed.brandHost && host.endsWith(parsed.brandHost)) score += 28;
+    if (brand === "zipcar" && /zip\.co|zippay|afterpay|quadpay|zip(?:\s|-)?pay|buy now pay later/.test(hayBrand)) {
+      score -= 50;
+    }
+  }
+
   if (parsed?.intent === "local") {
     const placeBits = (parsed.place ?? "").split(/\s+/).filter(Boolean);
     const hay = `${title} ${snippet} ${host} ${result.url}`.toLowerCase();
@@ -100,14 +111,20 @@ export function scoreResult(query: string, result: Omit<WebResult, "score">, par
       !placeBits.length ||
       placeBits.some((p) => hay.includes(p)) ||
       (parsed.place === "los angeles" && (hay.includes("/la") || /\bla\b/.test(hay)));
-    if (LOCAL_HOSTS.some((h) => host.endsWith(h)) && hasPlace) score += 18;
-    if (/restaurant|trattoria|osteria/.test(hay) && hasPlace) score += 10;
+    if (parsed.localKind !== "poi" && LOCAL_HOSTS.some((h) => host.endsWith(h)) && hasPlace) score += 18;
+    if (parsed.localKind !== "poi" && /restaurant|trattoria|osteria/.test(hay) && hasPlace) score += 10;
+    if (/locations?|pods?|parking|map|near|hours/.test(hay) && parsed.localKind === "poi") score += 12;
     if (!hasPlace) score -= 20;
-    if (result.source === "wikipedia" || host.includes("wikipedia.org")) score -= 16;
+    if (result.source === "wikipedia" || host.includes("wikipedia.org")) score -= parsed.brand ? 4 : 16;
     const topicBits = (parsed.topic ?? "").split(/\s+/).filter((t) => t.length > 2 && t !== "los" && t !== "angeles");
-    if (topicBits.length && !topicBits.some((t) => title.includes(t) || snippet.includes(t))) score -= 18;
+    if (topicBits.length && !topicBits.some((t) => title.includes(t) || snippet.includes(t) || host.includes(t.replace(/\s+/g, "")))) {
+      score -= 18;
+    }
     if (/language|phrases|lessons|grammar|vocabulary|duolingo|recipes?|wikipedia|wordreference|dizionario/.test(hay)) {
       score -= 28;
+    }
+    if (parsed.localKind === "poi" && /crash|arrest|sexual assault|killed|dies after|insurance/.test(hay) && parsed.brand && !hay.includes(parsed.brand)) {
+      score -= 30;
     }
   } else if (result.source === "wikipedia") {
     score += 2;

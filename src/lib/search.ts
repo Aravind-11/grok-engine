@@ -60,6 +60,19 @@ function peopleAlsoAsk(
   const items: PeopleAlsoAsk[] = [];
   if (parsed.intent === "local" && parsed.place) {
     const topic = parsed.topic || "places";
+    if (parsed.localKind === "poi") {
+      items.push(
+        {
+          question: `Where is ${topic} in ${parsed.place}?`,
+          answer: `Check official ${topic} location pages and maps in the results for pods or lots in ${parsed.place}.`,
+        },
+        {
+          question: `How do I reserve ${topic} near ${parsed.place}?`,
+          answer: `Open the official app or site from the results to see live availability around ${parsed.place}.`,
+        },
+      );
+      return items;
+    }
     items.push(
       {
         question: `What are the best ${topic} in ${parsed.place}?`,
@@ -112,13 +125,22 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
     wantAll || tab === "images" ? withTimeout(getKnowledge(lookup, parsed), 4500, null) : Promise.resolve(null);
   const variants =
     parsed.intent === "local" && parsed.place
-      ? Array.from(new Set([lookup, `best ${lookup}`, query]))
+      ? Array.from(
+          new Set(
+            parsed.localKind === "poi"
+              ? [lookup, `${parsed.topic || lookup} locations ${parsed.place}`, `${lookup} los angeles`]
+              : [lookup, `best ${lookup}`, query],
+          ),
+        )
       : [lookup];
   const localSites =
     parsed.intent === "local" && parsed.place
-      ? ["yelp.com", "eater.com", "infatuation.com", "timeout.com", "tripadvisor.com"].map(
-          (site) => `${lookup} site:${site}`,
-        )
+      ? parsed.localKind === "poi"
+        ? [parsed.brandHost ? `${parsed.brand} ${parsed.place} site:${parsed.brandHost}` : "", `${lookup} site:maps.google.com`]
+            .filter(Boolean)
+        : ["yelp.com", "eater.com", "infatuation.com", "timeout.com", "tripadvisor.com"].map(
+            (site) => `${lookup} site:${site}`,
+          )
       : [];
   const webP =
     tab === "all"
@@ -133,29 +155,38 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
   const hnP =
     tab === "all" && parsed.intent !== "local" ? withTimeout(searchHn(lookup), 4500, []) : Promise.resolve([]);
   const wikiP =
-    parsed.intent === "local" ? Promise.resolve([]) : withTimeout(wikiAsResults(lookup, parsed), 5000, []);
-  const wikiRawP =
-    parsed.intent === "local"
+    parsed.intent === "local" && parsed.localKind === "dining"
       ? Promise.resolve([])
-      : withTimeout(wikiSearch(lookup, 12), 4500, []);
+      : withTimeout(wikiAsResults(parsed.brand || lookup, parsed), 5000, []);
+  const wikiRawP =
+    parsed.intent === "local" && parsed.localKind === "dining"
+      ? Promise.resolve([])
+      : withTimeout(wikiSearch(parsed.brand || lookup, 12), 4500, []);
   const imagesP =
     tab === "all" || tab === "images"
       ? withTimeout(searchImages(parsed.image, tab === "images" ? 48 : 12), 7000, []).then((rows) => {
           const topicBits = parsed.contentTokens.filter(
             (t) => t !== "los" && t !== "angeles" && !(parsed.place ?? "").includes(t),
           );
-          const filtered = rows.filter((img) =>
-            isRelevant(topicBits.length ? topicBits : parsed.contentTokens, img.title),
-          );
-          const picked = (filtered.length >= 3 ? filtered : rows).slice(0, tab === "images" ? 48 : 12);
+          const filtered = rows.filter((img) => {
+            if (parsed.brand && !img.title.toLowerCase().includes(parsed.brand)) return false;
+            return isRelevant(topicBits.length ? topicBits : parsed.contentTokens, img.title);
+          });
+          const picked = (filtered.length ? filtered : parsed.brand ? [] : rows).slice(0, tab === "images" ? 48 : 12);
           return picked;
         })
       : Promise.resolve([]);
   const newsP =
     tab === "all" || tab === "news"
-      ? withTimeout(searchNews(lookup, tab === "news" ? 40 : 6), 7000, []).then((rows) =>
-          tab === "news" ? rows : rows.slice(0, 6),
-        )
+      ? withTimeout(searchNews(lookup, tab === "news" ? 40 : 8), 7000, []).then((rows) => {
+          const filtered = parsed.brand
+            ? rows.filter((row) => isRelevant([parsed.brand!], row.title, row.snippet))
+            : rows;
+          return (filtered.length ? filtered : parsed.localKind === "poi" ? [] : rows).slice(
+            0,
+            tab === "news" ? 40 : 6,
+          );
+        })
       : Promise.resolve([]);
   const videosP =
     tab === "videos" || tab === "all"
@@ -262,7 +293,7 @@ export async function runSearch(rawQuery: string, tab: Tab = "all", page = 1): P
     };
   }
 
-  const gathered = await cached(`search:v8:${tab}:${query}`, 45_000, () => gather(query, tab));
+  const gathered = await cached(`search:v9:${tab}:${query}`, 45_000, () => gather(query, tab));
   const start = (safePage - 1) * PAGE_SIZE;
   const { allResults, ...rest } = gathered;
 

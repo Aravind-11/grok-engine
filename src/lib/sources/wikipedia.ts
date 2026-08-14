@@ -104,7 +104,10 @@ export async function wikiAsResults(query: string, parsed?: ParsedQuery): Promis
 }
 
 export async function getKnowledge(query: string, parsed?: ParsedQuery): Promise<KnowledgePanel | null> {
-  if (parsed?.intent === "local") return null;
+  if (parsed?.intent === "local" && parsed.localKind === "dining") return null;
+  if (parsed?.intent === "local" && parsed.brand) {
+    query = parsed.brand;
+  }
 
   const rows = await wikiSearch(query, 8);
   if (!rows.length) return null;
