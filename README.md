@@ -1,6 +1,8 @@
 # Grok Engine
 
-A local search engine with a Google-like flow: homepage, ranked web results, knowledge cards, images, news, videos, instant answers, and an optional Grok overview.
+Live: [https://grok-engine.vercel.app](https://grok-engine.vercel.app)
+
+A search engine with a Google-like flow: homepage, ranked web results, knowledge cards, images, news, videos, instant answers, and an optional Grok overview.
 
 This is a **meta-search** product, not a from-scratch crawl of the whole web. Each query fans out to public sources, then Grok Engine ranks and presents them.
 
@@ -16,7 +18,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Optional AI overviews
 
-Copy `.env.example` to `.env.local` and set `XAI_API_KEY` from [console.x.ai](https://console.x.ai). Overviews then use Grok (`grok-4.6`) via `https://api.x.ai/v1`. Without a key, the page still shows a Quick answer built from Wikipedia and top snippets.
+Set `XAI_API_KEY` from [console.x.ai](https://console.x.ai) in `.env.local` (local) or in the Vercel project env vars (production). Overviews then use Grok (`grok-4.6`) via `https://api.x.ai/v1`. Without a key, the page still shows a Quick answer built from Wikipedia and top snippets.
 
 ## What it searches
 
