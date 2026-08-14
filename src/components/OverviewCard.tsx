@@ -43,8 +43,14 @@ export function OverviewCard({
   results: WebResult[];
 }) {
   const [text, setText] = useState(initialText);
-  const [source, setSource] = useState<"grok" | "extractive">(pending ? "extractive" : "extractive");
+  const [source, setSource] = useState<"grok" | "extractive">("extractive");
   const [loading, setLoading] = useState(pending);
+
+  useEffect(() => {
+    setText(initialText);
+    setSource("extractive");
+    setLoading(pending);
+  }, [query, initialText, pending]);
 
   useEffect(() => {
     if (!pending) return;

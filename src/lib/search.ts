@@ -138,9 +138,11 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
   const knowledgeP =
     parsed.intent === "weather" || parsed.intent === "local"
       ? Promise.resolve(null)
-      : wantAll || tab === "images"
-        ? withTimeout(getKnowledge(lookup, parsed), 4500, null)
-        : Promise.resolve(null);
+      : parsed.brand && parsed.contentTokens.some((t) => t !== parsed.brand)
+        ? Promise.resolve(null)
+        : wantAll || tab === "images"
+          ? withTimeout(getKnowledge(lookup, parsed), 4500, null)
+          : Promise.resolve(null);
   const variants =
     parsed.intent === "weather" && parsed.place
       ? Array.from(new Set([`${parsed.place} weather`, `${parsed.place} sunny day`, `what a sunny day in ${parsed.place} looks like`]))
@@ -152,7 +154,9 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
                 : [lookup, `best ${lookup}`, query],
             ),
           )
-        : [lookup];
+        : parsed.brand
+          ? Array.from(new Set([lookup, `${lookup} site:${parsed.brandHost || `${parsed.brand}.com`}`]))
+          : [lookup];
   const localSites =
     parsed.intent === "local" && parsed.place
       ? parsed.localKind === "poi"
@@ -326,7 +330,7 @@ export async function runSearch(rawQuery: string, tab: Tab = "all", page = 1): P
     };
   }
 
-  const gathered = await cached(`search:v12:${tab}:${query}`, 45_000, () => gather(query, tab));
+  const gathered = await cached(`search:v13:${tab}:${query}`, 45_000, () => gather(query, tab));
   const start = (safePage - 1) * PAGE_SIZE;
   const { allResults, ...rest } = gathered;
 

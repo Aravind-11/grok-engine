@@ -31,5 +31,5 @@ export default async function SearchPage({ searchParams }: Props) {
     if (dest) redirect(dest);
   }
 
-  return <ResultsView data={data} />;
+  return <ResultsView key={`${q}:${tab}:${page}`} data={data} />;
 }

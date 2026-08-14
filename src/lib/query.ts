@@ -218,6 +218,7 @@ const BRANDS: { pattern: RegExp; name: string; host?: string }[] = [
   { pattern: /\buber[\s-]?eats\b/i, name: "uber eats", host: "ubereats.com" },
   { pattern: /\bhome[\s-]?depot\b/i, name: "home depot", host: "homedepot.com" },
   { pattern: /\btaco[\s-]?bell\b/i, name: "taco bell", host: "tacobell.com" },
+  { pattern: /\bikea\b/i, name: "ikea", host: "ikea.com" },
 ];
 
 const NEIGHBORHOODS: Record<string, string> = {
