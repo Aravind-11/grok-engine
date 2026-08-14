@@ -1,26 +1,136 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #0b0b0d;
+  --bg-elev: #141417;
+  --bg-search: #1b1b1f;
+  --bg-hover: #222228;
+  --text: #f3efe6;
+  --muted: #9a9488;
+  --faint: #625e57;
+  --line: #2a2a30;
+  --accent: #f5c542;
+  --accent-ink: #1a1403;
+  --link: #8ab4ff;
+  --link-hover: #b3cdff;
+  --visited: #c58af9;
+  --ok: #81c995;
+  --danger: #f28b82;
+  --glow: rgba(245, 197, 66, 0.18);
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+html.light {
+  --bg: #f7f4ee;
+  --bg-elev: #ffffff;
+  --bg-search: #ffffff;
+  --bg-hover: #f1ece3;
+  --text: #171512;
+  --muted: #5e5950;
+  --faint: #8a8478;
+  --line: #e4ddd0;
+  --accent: #c48a00;
+  --accent-ink: #fff8e8;
+  --link: #1a5fb4;
+  --link-hover: #124a8c;
+  --visited: #6a1b9a;
+  --ok: #1e7a46;
+  --danger: #b42318;
+  --glow: rgba(196, 138, 0, 0.12);
+  --shadow: 0 16px 40px rgba(40, 30, 10, 0.08);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
   --font-sans: var(--font-geist-sans);
+  --font-serif: var(--font-instrument);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100%;
+  overflow-x: hidden;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.starfield {
+  background:
+    radial-gradient(1200px 500px at 50% -10%, rgba(245, 197, 66, 0.08), transparent 55%),
+    radial-gradient(800px 400px at 80% 10%, rgba(138, 180, 255, 0.06), transparent 50%),
+    radial-gradient(1px 1px at 12% 22%, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(1px 1px at 78% 18%, rgba(255, 255, 255, 0.28), transparent),
+    radial-gradient(1px 1px at 32% 68%, rgba(255, 255, 255, 0.22), transparent),
+    radial-gradient(1px 1px at 88% 72%, rgba(255, 255, 255, 0.2), transparent),
+    var(--bg);
+}
+
+html.light .starfield {
+  background:
+    radial-gradient(1000px 420px at 50% -8%, rgba(196, 138, 0, 0.1), transparent 55%),
+    var(--bg);
+}
+
+.search-shell {
+  background: var(--bg-search);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+}
+
+.search-shell:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--line));
+  box-shadow: 0 0 0 4px var(--glow);
+}
+
+.link-title {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.link-title:hover {
+  text-decoration: underline;
+  color: var(--link-hover);
+}
+
+.link-title:visited {
+  color: var(--visited);
+}
+
+.snippet b,
+.snippet strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.grain {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  z-index: 50;
+}
+
+html.light .grain {
+  opacity: 0.04;
 }

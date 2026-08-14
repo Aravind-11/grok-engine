@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Grok Engine
 
-## Getting Started
+A local search engine with a Google-like flow: homepage, ranked web results, knowledge cards, images, news, videos, instant answers, and an optional Grok overview.
 
-First, run the development server:
+This is a **meta-search** product, not a from-scratch crawl of the whole web. Each query fans out to public sources, then Grok Engine ranks and presents them.
+
+## Run
 
 ```bash
+cd grok-engine
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Optional AI overviews
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Copy `.env.example` to `.env.local` and set `XAI_API_KEY` from [console.x.ai](https://console.x.ai). Overviews then use Grok (`grok-4.6`) via `https://api.x.ai/v1`. Without a key, the page still shows a Quick answer built from Wikipedia and top snippets.
 
-## Learn More
+## What it searches
 
-To learn more about Next.js, take a look at the following resources:
+| Surface | Source |
+| --- | --- |
+| Web | DuckDuckGo HTML + Wikipedia |
+| Knowledge | Wikipedia + Wikidata |
+| Images | Wikipedia page images + Wikimedia Commons |
+| News | Google News RSS |
+| Videos | YouTube matches |
+| Suggest | DuckDuckGo autocomplete |
+| Weather | Open-Meteo |
+| Definitions | Free Dictionary API |
+| Math / units / time | Built in |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Browser search box
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The app ships an OpenSearch description at `/opensearch.xml`. In Chrome/Firefox you can add Grok Engine as a search engine from the address bar while the app is open.
