@@ -1,5 +1,5 @@
 import type { ParsedQuery } from "./query";
-import { contentTokens } from "./query";
+import { contentTokens, requiredPhrases } from "./query";
 import type { WebResult } from "./types";
 import { hostnameOf } from "./http";
 
@@ -92,6 +92,16 @@ export function scoreResult(query: string, result: Omit<WebResult, "score">, par
 
   if (words.length >= 2 && hits === 0) score -= 24;
   else if (words.length >= 3 && hits < 2) score -= 12;
+
+  if (parsed) {
+    const hayAll = `${title} ${snippet} ${host} ${result.url}`.toLowerCase();
+    for (const phrase of requiredPhrases(parsed)) {
+      if (!hayAll.includes(phrase) && !hayAll.includes(phrase.replace(/\s+/g, ""))) score -= 36;
+    }
+    if (/santa monica/.test(parsed.search) && /santa claus|saint nick|christmas eve|santa tracker/.test(hayAll)) {
+      score -= 50;
+    }
+  }
 
   if (parsed?.brand) {
     const brand = parsed.brand.toLowerCase();

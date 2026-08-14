@@ -310,6 +310,28 @@ export function isRelevant(queryTokens: string[], ...parts: string[]): boolean {
   return overlapScore(queryTokens, ...parts) >= (queryTokens.length >= 3 ? 0.4 : 0.5);
 }
 
+export function requiredPhrases(parsed: ParsedQuery): string[] {
+  const hay = `${parsed.original} ${parsed.search} ${parsed.place ?? ""}`.toLowerCase();
+  const phrases: string[] = [];
+  for (const city of CITY_NAMES) {
+    if (hay.includes(city)) phrases.push(city);
+  }
+  for (const name of Object.keys(NEIGHBORHOODS)) {
+    if (name.includes(" ") && hay.includes(name)) phrases.push(name);
+  }
+  if (parsed.place && parsed.place.includes(" ")) phrases.push(parsed.place);
+  return [...new Set(phrases)];
+}
+
+export function isRelevantTo(parsed: ParsedQuery, ...parts: string[]): boolean {
+  const hay = parts.join(" ").toLowerCase();
+  for (const phrase of requiredPhrases(parsed)) {
+    const compact = phrase.replace(/\s+/g, "");
+    if (!hay.includes(phrase) && !hay.includes(compact)) return false;
+  }
+  return isRelevant(parsed.contentTokens, ...parts);
+}
+
 export function parseQuery(raw: string): ParsedQuery {
   const original = raw.trim();
   const branded = normalizeBrands(original);

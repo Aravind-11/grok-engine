@@ -1,5 +1,5 @@
 import type { ParsedQuery } from "../query";
-import { isRelevant } from "../query";
+import { isRelevant, isRelevantTo } from "../query";
 import type { KnowledgePanel, WebResult } from "../types";
 import { cached, displayPath, faviconFor, fetchJson, stripTags } from "../http";
 import { wikidataFacts } from "./wikidata";
@@ -74,9 +74,7 @@ export async function wikiAsResults(query: string, parsed?: ParsedQuery): Promis
       return pages
         .filter((page) => page.title && page.fullurl)
         .filter((page) =>
-          parsed
-            ? isRelevant(parsed.contentTokens, page.title ?? "", page.extract ?? "")
-            : true,
+          parsed ? isRelevantTo(parsed, page.title ?? "", page.extract ?? "") : true,
         )
         .map((page) => ({
           title: `${page.title} - Wikipedia`,
@@ -122,18 +120,22 @@ export async function getKnowledge(query: string, parsed?: ParsedQuery): Promise
       return t.startsWith(`${q},`) || t.startsWith(`${q} (`) || t.startsWith(`${q} inc`);
     }) ??
     rows.find((r) => r.title.toLowerCase().startsWith(q) && r.title.length <= q.length + 14) ??
-    rows.find((r) => isRelevant(tokens, r.title, r.snippet)) ??
+    rows.find((r) => (parsed ? isRelevantTo(parsed, r.title, r.snippet) : isRelevant(tokens, r.title, r.snippet))) ??
     null;
 
   if (!preferred) return null;
-  if (tokens.length && !isRelevant(tokens, preferred.title, preferred.snippet)) return null;
+  if (parsed && !isRelevantTo(parsed, preferred.title, preferred.snippet)) return null;
+  if (!parsed && tokens.length && !isRelevant(tokens, preferred.title, preferred.snippet)) return null;
 
   let summary = await wikiSummary(preferred.title);
   if (summary?.type === "disambiguation" && rows[1]) {
     summary = (await wikiSummary(rows[1].title)) ?? summary;
   }
   if (!summary?.extract) return null;
-  if (tokens.length && !isRelevant(tokens, summary.title, summary.description ?? "", summary.extract)) {
+  if (parsed && !isRelevantTo(parsed, summary.title, summary.description ?? "", summary.extract)) {
+    return null;
+  }
+  if (!parsed && tokens.length && !isRelevant(tokens, summary.title, summary.description ?? "", summary.extract)) {
     return null;
   }
 

@@ -2,7 +2,7 @@ import { buildExtractiveOverview } from "./ai";
 import { applyCrawl, crawlExpand } from "./crawl";
 import { cached, clampQuery, withTimeout } from "./http";
 import { definitionQuery, tryCalc, tryConvert, tryTime, weatherPlace } from "./instant";
-import { isRelevant, parseQuery, type ParsedQuery } from "./query";
+import { isRelevant, isRelevantTo, parseQuery, type ParsedQuery } from "./query";
 import { rankAndDedupe } from "./rank";
 import { searchBingMany } from "./sources/bing";
 import { searchWeb, searchWebMany, suggest } from "./sources/ddg";
@@ -44,7 +44,7 @@ async function relatedSearches(query: string, parsed: ParsedQuery): Promise<stri
   for (const item of [...ac, ...wiki.map((w) => w.title)]) {
     const key = item.toLowerCase();
     if (!item || seen.has(key)) continue;
-    if (parsed.contentTokens.length && !isRelevant(parsed.contentTokens, item)) continue;
+    if (parsed.contentTokens.length && !isRelevantTo(parsed, item)) continue;
     seen.add(key);
     out.push(item);
     if (out.length >= 12) break;
@@ -99,7 +99,7 @@ function peopleAlsoAsk(
     );
     return items;
   }
-  if (knowledge?.extract && isRelevant(parsed.contentTokens, knowledge.title, knowledge.extract)) {
+  if (knowledge?.extract && isRelevantTo(parsed, knowledge.title, knowledge.extract)) {
     items.push({
       question: `What is ${knowledge.title}?`,
       answer: knowledge.extract,
@@ -108,7 +108,7 @@ function peopleAlsoAsk(
   for (const row of wiki) {
     if (!row.snippet) continue;
     if (knowledge && row.title === knowledge.title) continue;
-    if (!isRelevant(parsed.contentTokens, row.title, row.snippet)) continue;
+    if (!isRelevantTo(parsed, row.title, row.snippet)) continue;
     items.push({
       question: `What is ${row.title}?`,
       answer: row.snippet,
@@ -267,7 +267,7 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
       7000,
       { enriched: new Map(), discovered: [] as Omit<WebResult, "score">[] },
     );
-    const extra = discovered.filter((row) => isRelevant(parsed.contentTokens, row.title, row.url, row.snippet));
+    const extra = discovered.filter((row) => isRelevantTo(parsed, row.title, row.url, row.snippet));
     pool = [...applyCrawl(seed, enriched), ...extra];
   }
 
@@ -326,7 +326,7 @@ export async function runSearch(rawQuery: string, tab: Tab = "all", page = 1): P
     };
   }
 
-  const gathered = await cached(`search:v11:${tab}:${query}`, 45_000, () => gather(query, tab));
+  const gathered = await cached(`search:v12:${tab}:${query}`, 45_000, () => gather(query, tab));
   const start = (safePage - 1) * PAGE_SIZE;
   const { allResults, ...rest } = gathered;
 

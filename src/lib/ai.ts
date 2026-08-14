@@ -1,4 +1,4 @@
-import { isRelevant, type ParsedQuery } from "./query";
+import { isRelevant, isRelevantTo, type ParsedQuery } from "./query";
 import type { KnowledgePanel, WebResult } from "./types";
 
 function extractiveOverview(
@@ -7,15 +7,15 @@ function extractiveOverview(
   results: WebResult[],
   parsed?: ParsedQuery,
 ): string {
-  const tokens = parsed?.contentTokens ?? [];
-  if (
-    knowledge?.extract &&
-    (!tokens.length || isRelevant(tokens, knowledge.title, knowledge.description, knowledge.extract))
-  ) {
+  if (knowledge?.extract) {
     return knowledge.extract.split(/(?<=[.!?])\s+/).slice(0, 3).join(" ");
   }
   const top = results
-    .filter((r) => r.snippet && (!tokens.length || isRelevant(tokens, r.title, r.snippet)))
+    .filter((r) => {
+      if (!r.snippet) return false;
+      if (parsed) return isRelevantTo(parsed, r.title, r.snippet);
+      return isRelevant([], r.title, r.snippet) || Boolean(r.snippet);
+    })
     .slice(0, 4);
   if (!top.length) return "";
   if (parsed?.intent === "local" && parsed.place) {
