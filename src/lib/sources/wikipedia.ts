@@ -45,18 +45,54 @@ export async function wikiSummary(title: string): Promise<WikiSummary | null> {
   });
 }
 
+type WikiExtractResponse = {
+  query?: {
+    pages?: Record<
+      string,
+      {
+        title?: string;
+        extract?: string;
+        fullurl?: string;
+        index?: number;
+      }
+    >;
+  };
+};
+
 export async function wikiAsResults(query: string): Promise<Omit<WebResult, "score">[]> {
-  const rows = await wikiSearch(query, 6);
-  return rows.map((row) => {
-    const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(row.title.replace(/ /g, "_"))}`;
-    return {
-      title: `${row.title} - Wikipedia`,
-      url,
-      displayUrl: displayPath(url),
-      snippet: row.snippet,
-      favicon: faviconFor(url),
-      source: "wikipedia",
-    };
+  return cached(`wiki-ext:${query}`, 120_000, async () => {
+    try {
+      const data = await fetchJson<WikiExtractResponse>(
+        `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}` +
+          `&gsrlimit=18&prop=extracts|info&exintro=1&explaintext=1&exlimit=18&inprop=url&format=json`,
+      );
+      const pages = Object.values(data.query?.pages ?? {}).sort(
+        (a, b) => (a.index ?? 0) - (b.index ?? 0),
+      );
+      return pages
+        .filter((page) => page.title && page.fullurl)
+        .map((page) => ({
+          title: `${page.title} - Wikipedia`,
+          url: page.fullurl as string,
+          displayUrl: displayPath(page.fullurl as string),
+          snippet: (page.extract ?? "").replace(/\s+/g, " ").slice(0, 280),
+          favicon: faviconFor(page.fullurl as string),
+          source: "wikipedia",
+        }));
+    } catch {
+      const rows = await wikiSearch(query, 12);
+      return rows.map((row) => {
+        const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(row.title.replace(/ /g, "_"))}`;
+        return {
+          title: `${row.title} - Wikipedia`,
+          url,
+          displayUrl: displayPath(url),
+          snippet: row.snippet,
+          favicon: faviconFor(url),
+          source: "wikipedia",
+        };
+      });
+    }
   });
 }
 

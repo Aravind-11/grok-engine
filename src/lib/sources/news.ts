@@ -8,7 +8,7 @@ function tag(block: string, name: string): string {
   return plain ? stripTags(plain[1]) : "";
 }
 
-export async function searchNews(query: string, limit = 20): Promise<NewsResult[]> {
+export async function searchNews(query: string, limit = 40): Promise<NewsResult[]> {
   return cached(`news:${query}`, 60_000, async () => {
     const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
     const xml = await fetchText(url, {}, 7000);

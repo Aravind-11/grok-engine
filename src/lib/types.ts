@@ -8,6 +8,7 @@ export type WebResult = {
   favicon: string;
   source: string;
   score: number;
+  crawled?: boolean;
 };
 
 export type ImageResult = {

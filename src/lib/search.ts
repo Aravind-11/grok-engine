@@ -1,17 +1,20 @@
 import { buildExtractiveOverview } from "./ai";
+import { applyCrawl, crawlExpand } from "./crawl";
 import { cached, clampQuery, withTimeout } from "./http";
 import { definitionQuery, tryCalc, tryConvert, tryTime, weatherPlace } from "./instant";
 import { rankAndDedupe } from "./rank";
-import { searchWeb, suggest } from "./sources/ddg";
+import { searchBingMany } from "./sources/bing";
+import { searchWeb, searchWebMany, suggest } from "./sources/ddg";
 import { defineWord } from "./sources/dictionary";
+import { searchHn } from "./sources/hn";
 import { searchImages } from "./sources/images";
 import { searchNews } from "./sources/news";
 import { searchVideos } from "./sources/videos";
 import { getWeather } from "./sources/weather";
 import { getKnowledge, wikiAsResults, wikiSearch } from "./sources/wikipedia";
-import type { InstantAnswer, PeopleAlsoAsk, SearchResponse, Tab } from "./types";
+import type { InstantAnswer, PeopleAlsoAsk, SearchResponse, Tab, WebResult } from "./types";
 
-const PAGE_SIZE = 10;
+export const PAGE_SIZE = 20;
 
 async function resolveInstant(query: string): Promise<InstantAnswer | null> {
   const calc = tryCalc(query);
@@ -31,7 +34,7 @@ async function resolveInstant(query: string): Promise<InstantAnswer | null> {
 async function relatedSearches(query: string): Promise<string[]> {
   const [ac, wiki] = await Promise.all([
     withTimeout(suggest(query), 2500, [] as string[]),
-    withTimeout(wikiSearch(query, 6), 2500, [] as { title: string; snippet: string }[]),
+    withTimeout(wikiSearch(query, 12), 2500, [] as { title: string; snippet: string }[]),
   ]);
   const out: string[] = [];
   const seen = new Set([query.toLowerCase()]);
@@ -40,7 +43,7 @@ async function relatedSearches(query: string): Promise<string[]> {
     if (!item || seen.has(key)) continue;
     seen.add(key);
     out.push(item);
-    if (out.length >= 8) break;
+    if (out.length >= 12) break;
   }
   return out;
 }
@@ -64,7 +67,7 @@ function peopleAlsoAsk(
       question: `What is ${row.title}?`,
       answer: row.snippet,
     });
-    if (items.length >= 5) break;
+    if (items.length >= 8) break;
   }
   if (!items.length) {
     items.push({
@@ -72,11 +75,110 @@ function peopleAlsoAsk(
       answer: `Open the results below for current pages about ${query}.`,
     });
   }
-  return items.slice(0, 5);
+  return items.slice(0, 8);
+}
+
+type Gathered = Omit<SearchResponse, "page" | "results" | "resultCount"> & {
+  allResults: WebResult[];
+};
+
+async function gather(query: string, tab: Tab): Promise<Gathered> {
+  const started = Date.now();
+  const wantAll = tab === "all";
+
+  const instantP = resolveInstant(query);
+  const knowledgeP = wantAll || tab === "images" ? withTimeout(getKnowledge(query), 4500, null) : Promise.resolve(null);
+  const webP =
+    tab === "all"
+      ? withTimeout(searchWebMany(query, 4), 9000, [])
+      : Promise.resolve([]);
+  const bingP = tab === "all" ? withTimeout(searchBingMany(query), 8000, []) : Promise.resolve([]);
+  const hnP = tab === "all" ? withTimeout(searchHn(query), 4500, []) : Promise.resolve([]);
+  const wikiP = withTimeout(wikiAsResults(query), 5000, []);
+  const wikiRawP = withTimeout(wikiSearch(query, 12), 4500, []);
+  const imagesP =
+    tab === "all" || tab === "images"
+      ? withTimeout(searchImages(query, tab === "images" ? 48 : 12), 7000, []).then((rows) =>
+          tab === "images" ? rows : rows.slice(0, 12),
+        )
+      : Promise.resolve([]);
+  const newsP =
+    tab === "all" || tab === "news"
+      ? withTimeout(searchNews(query, tab === "news" ? 40 : 6), 7000, []).then((rows) =>
+          tab === "news" ? rows : rows.slice(0, 6),
+        )
+      : Promise.resolve([]);
+  const videosP =
+    tab === "videos" || tab === "all"
+      ? withTimeout(searchVideos(query), 9000, [])
+      : Promise.resolve([]);
+  const relatedP = relatedSearches(query);
+
+  const [instant, knowledge, web, bing, hn, wiki, wikiRaw, images, news, videos, related] = await Promise.all([
+    instantP,
+    knowledgeP,
+    webP,
+    bingP,
+    hnP,
+    wikiP,
+    wikiRawP,
+    imagesP,
+    newsP,
+    videosP,
+    relatedP,
+  ]);
+
+  if (!web.length && !bing.length && instant && (instant.kind === "weather" || instant.kind === "time")) {
+    const place = instant.kind === "weather" ? instant.place.split(",")[0] : instant.place;
+    const extra = await withTimeout(searchWebMany(place, 2), 6000, []);
+    web.push(...extra);
+  }
+
+  const seed = [...web, ...bing, ...hn, ...wiki];
+  let pool = seed;
+
+  if (wantAll && seed.length) {
+    const { enriched, discovered } = await withTimeout(
+      crawlExpand(query, seed, 14),
+      7000,
+      { enriched: new Map(), discovered: [] as Omit<WebResult, "score">[] },
+    );
+    pool = [...applyCrawl(seed, enriched), ...discovered];
+  }
+
+  const merged = rankAndDedupe(query, pool);
+
+  let finalInstant = instant;
+  if (!finalInstant && !knowledge) {
+    const word = definitionQuery(query);
+    if (word && query.split(" ").length === 1) {
+      finalInstant = await defineWord(word);
+    }
+  }
+
+  const skipOverview = Boolean(finalInstant);
+  const overview =
+    tab === "all" && !skipOverview
+      ? buildExtractiveOverview(query, knowledge, merged.slice(0, 8))
+      : null;
+
+  return {
+    query,
+    tab,
+    tookMs: Date.now() - started,
+    instant: finalInstant,
+    knowledge,
+    images,
+    news,
+    videos: videos.slice(0, tab === "videos" ? 24 : 6),
+    related,
+    peopleAlsoAsk: tab === "all" ? peopleAlsoAsk(query, knowledge, wikiRaw) : [],
+    overview,
+    allResults: merged,
+  };
 }
 
 export async function runSearch(rawQuery: string, tab: Tab = "all", page = 1): Promise<SearchResponse> {
-  const started = Date.now();
   const query = clampQuery(rawQuery);
   const safePage = Number.isFinite(page) && page > 0 ? Math.min(page, 20) : 1;
 
@@ -99,84 +201,14 @@ export async function runSearch(rawQuery: string, tab: Tab = "all", page = 1): P
     };
   }
 
-  return cached(`search:v3:${tab}:${safePage}:${query}`, 45_000, async () => {
-    const offset = (safePage - 1) * PAGE_SIZE;
-    const wantAll = tab === "all";
+  const gathered = await cached(`search:v4:${tab}:${query}`, 45_000, () => gather(query, tab));
+  const start = (safePage - 1) * PAGE_SIZE;
+  const { allResults, ...rest } = gathered;
 
-    const instantP = resolveInstant(query);
-    const knowledgeP = wantAll || tab === "images" ? withTimeout(getKnowledge(query), 4500, null) : Promise.resolve(null);
-    const webP =
-      tab === "all" ? withTimeout(searchWeb(query, offset), 8000, []) : Promise.resolve([]);
-    const wikiP = withTimeout(wikiAsResults(query), 4500, []);
-    const wikiRawP = withTimeout(wikiSearch(query, 6), 4500, []);
-    const imagesP =
-      tab === "all" || tab === "images"
-        ? withTimeout(searchImages(query, 28), 7000, []).then((rows) =>
-            tab === "images" ? rows : rows.slice(0, 8),
-          )
-        : Promise.resolve([]);
-    const newsP =
-      tab === "all" || tab === "news"
-        ? withTimeout(searchNews(query, 24), 7000, []).then((rows) =>
-            tab === "news" ? rows : rows.slice(0, 4),
-          )
-        : Promise.resolve([]);
-    const videosP =
-      tab === "videos" || tab === "all"
-        ? withTimeout(searchVideos(query), 8000, [])
-        : Promise.resolve([]);
-    const relatedP = relatedSearches(query);
-
-    const [instant, knowledge, web, wiki, wikiRaw, images, news, videos, related] = await Promise.all([
-      instantP,
-      knowledgeP,
-      webP,
-      wikiP,
-      wikiRawP,
-      imagesP,
-      newsP,
-      videosP,
-      relatedP,
-    ]);
-
-    if (!web.length && instant && (instant.kind === "weather" || instant.kind === "time")) {
-      const place = instant.kind === "weather" ? instant.place.split(",")[0] : instant.place;
-      const extra = await withTimeout(searchWeb(place), 6000, []);
-      web.push(...extra);
-    }
-
-    const merged = rankAndDedupe(query, tab === "all" ? [...web, ...wiki.slice(0, 3)] : web);
-    const results = merged.slice(0, PAGE_SIZE);
-
-    let finalInstant = instant;
-    if (!finalInstant && !knowledge) {
-      const word = definitionQuery(query);
-      if (word && query.split(" ").length === 1) {
-        finalInstant = await defineWord(word);
-      }
-    }
-
-    const skipOverview = Boolean(finalInstant);
-    const overview =
-      tab === "all" && !skipOverview
-        ? buildExtractiveOverview(query, knowledge, results)
-        : null;
-
-    return {
-      query,
-      tab,
-      page: safePage,
-      tookMs: Date.now() - started,
-      instant: finalInstant,
-      knowledge,
-      results,
-      images,
-      news,
-      videos: videos.slice(0, tab === "videos" ? 16 : 4),
-      related,
-      peopleAlsoAsk: tab === "all" ? peopleAlsoAsk(query, knowledge, wikiRaw) : [],
-      overview,
-      resultCount: Math.max(merged.length, images.length, news.length, videos.length),
-    };
-  });
+  return {
+    ...rest,
+    page: safePage,
+    results: allResults.slice(start, start + PAGE_SIZE),
+    resultCount: allResults.length,
+  };
 }

@@ -21,7 +21,11 @@ function videoIdFrom(url: string): string | null {
 }
 
 export async function searchVideos(query: string): Promise<VideoResult[]> {
-  const rows = await searchWeb(`${query} site:youtube.com`, 0);
+  const [a, b] = await Promise.all([
+    searchWeb(`${query} site:youtube.com`, 0),
+    searchWeb(`${query} site:youtube.com`, 10),
+  ]);
+  const rows = [...a, ...b];
   const out: VideoResult[] = [];
   const seen = new Set<string>();
   for (const row of rows) {

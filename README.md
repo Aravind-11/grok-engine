@@ -4,7 +4,7 @@ Live: [https://grok-engine.vercel.app](https://grok-engine.vercel.app)
 
 A search engine with a Google-like flow: homepage, ranked web results, knowledge cards, images, news, videos, instant answers, and an optional Grok overview.
 
-This is a **meta-search** product, not a from-scratch crawl of the whole web. Each query fans out to public sources, then Grok Engine ranks and presents them.
+This is a **meta-search + query-time crawler**, not a from-scratch index of the whole web. Each query fans out to DuckDuckGo, Bing, Wikipedia, and Hacker News, then crawls the top pages for richer snippets and extra links.
 
 ## Run
 

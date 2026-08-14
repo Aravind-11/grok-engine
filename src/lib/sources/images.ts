@@ -34,17 +34,17 @@ type WikiPagesResponse = {
   };
 };
 
-export async function searchImages(query: string, limit = 24): Promise<ImageResult[]> {
+export async function searchImages(query: string, limit = 40): Promise<ImageResult[]> {
   return cached(`img:${limit}:${query}`, 120_000, async () => {
     const [commons, pages] = await Promise.all([
       fetchJson<CommonsResponse>(
         `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6` +
-          `&gsrsearch=${encodeURIComponent(query)}&gsrlimit=${Math.min(limit, 24)}` +
+          `&gsrsearch=${encodeURIComponent(query)}&gsrlimit=${Math.min(limit, 40)}` +
           `&prop=imageinfo&iiprop=url|mime|size&iiurlwidth=640&format=json`,
       ).catch(() => ({}) as CommonsResponse),
       fetchJson<WikiPagesResponse>(
         `https://en.wikipedia.org/w/api.php?action=query&generator=search` +
-          `&gsrsearch=${encodeURIComponent(query)}&gsrlimit=12` +
+          `&gsrsearch=${encodeURIComponent(query)}&gsrlimit=20` +
           `&prop=pageimages|info&piprop=thumbnail|original&pithumbsize=640&inprop=url&format=json`,
       ).catch(() => ({}) as WikiPagesResponse),
     ]);

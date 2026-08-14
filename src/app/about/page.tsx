@@ -25,11 +25,12 @@ export default function AboutPage() {
           instant answers, and related questions.
         </p>
         <p className="mt-4 leading-relaxed text-[var(--muted)]">
-          It does not crawl the entire web the way Google does. It fans out to public sources
-          on every query, then ranks and presents them:
+          It does not keep a Google-scale index. On every query it fans out to multiple search
+          sources, then crawls the top pages to expand snippets and follow relevant links:
         </p>
         <ul className="mt-4 list-disc space-y-2 pl-5 text-[var(--muted)]">
-          <li>Web results from DuckDuckGo HTML</li>
+          <li>Web results from DuckDuckGo, Bing, Wikipedia, and Hacker News</li>
+          <li>Live crawl of top result pages for richer snippets and extra links</li>
           <li>Knowledge cards from Wikipedia and Wikidata</li>
           <li>Images from Wikipedia and Wikimedia Commons</li>
           <li>News from Google News RSS</li>

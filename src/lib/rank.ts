@@ -75,6 +75,7 @@ export function scoreResult(query: string, result: Omit<WebResult, "score">): nu
   }
 
   if (result.source === "wikipedia") score += 2;
+  if (result.crawled && result.snippet.length > 80) score += 3;
   if (host.endsWith(".com") && words.some((w) => host.includes(w))) score += 5;
   return score;
 }

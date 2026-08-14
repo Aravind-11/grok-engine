@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PAGE_SIZE } from "@/lib/search";
 import type { SearchResponse, Tab } from "@/lib/types";
 import { formatNewsDate } from "@/lib/sources/news";
 import { InstantCard } from "./InstantCard";
@@ -69,7 +70,9 @@ export function ResultsView({ data }: { data: SearchResponse }) {
       >
         <div className="min-w-0 max-w-full overflow-hidden">
           <p className="mb-4 text-xs text-[var(--faint)]">
-            About {Math.max(data.resultCount, data.results.length)} results ({(data.tookMs / 1000).toFixed(2)} seconds)
+            About {Math.max(data.resultCount, data.results.length)} results
+            {data.page > 1 ? ` · page ${data.page}` : ""}
+            {` (${(data.tookMs / 1000).toFixed(2)} seconds)`}
           </p>
 
           {tab === "all" && data.instant && <InstantCard answer={data.instant} />}
@@ -93,7 +96,7 @@ export function ResultsView({ data }: { data: SearchResponse }) {
                 </Link>
               </div>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                {data.images.slice(0, 6).map((img) => (
+                {data.images.slice(0, 12).map((img) => (
                   <a
                     key={img.thumb}
                     href={img.sourceUrl}
@@ -117,8 +120,8 @@ export function ResultsView({ data }: { data: SearchResponse }) {
                   More news
                 </Link>
               </div>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {data.news.slice(0, 3).map((item) => (
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {data.news.slice(0, 6).map((item) => (
                   <a
                     key={item.url}
                     href={item.url}
@@ -150,6 +153,11 @@ export function ResultsView({ data }: { data: SearchResponse }) {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={result.favicon} alt="" width={16} height={16} className="rounded-sm" />
                           <span>{result.displayUrl}</span>
+                          {result.crawled && (
+                            <span className="rounded-full border border-[var(--line)] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--accent)]">
+                              crawled
+                            </span>
+                          )}
                         </div>
                         <h3 className="link-title mt-1 text-xl leading-snug">{result.title}</h3>
                       </a>
@@ -275,7 +283,8 @@ function Empty({ query, kind = "pages" }: { query: string; kind?: string }) {
 }
 
 function Pager({ data }: { data: SearchResponse }) {
-  if (data.results.length < 8 && data.page === 1) return null;
+  const hasNext = data.page * PAGE_SIZE < data.resultCount;
+  if (!hasNext && data.page === 1) return null;
   return (
     <div className="mt-10 flex items-center gap-3">
       {data.page > 1 && (
@@ -286,8 +295,10 @@ function Pager({ data }: { data: SearchResponse }) {
           Previous
         </Link>
       )}
-      <span className="text-sm text-[var(--faint)]">Page {data.page}</span>
-      {data.results.length >= 8 && (
+      <span className="text-sm text-[var(--faint)]">
+        Page {data.page} of {Math.max(1, Math.ceil(data.resultCount / PAGE_SIZE))}
+      </span>
+      {hasNext && (
         <Link
           href={hrefFor(data.query, "all", data.page + 1)}
           className="rounded-full border border-[var(--line)] px-4 py-2 text-sm hover:border-[var(--accent)]"

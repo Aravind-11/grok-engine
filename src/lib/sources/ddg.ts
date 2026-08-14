@@ -46,6 +46,19 @@ async function ddgHtml(query: string, offset: number): Promise<string> {
   return html;
 }
 
+export async function searchWebMany(query: string, pages = 4): Promise<Omit<WebResult, "score">[]> {
+  const offsets = Array.from({ length: pages }, (_, i) => i * 10);
+  const batches = await Promise.all(offsets.map((offset) => searchWeb(query, offset)));
+  const seen = new Set<string>();
+  const out: Omit<WebResult, "score">[] = [];
+  for (const row of batches.flat()) {
+    if (seen.has(row.url)) continue;
+    seen.add(row.url);
+    out.push(row);
+  }
+  return out;
+}
+
 export async function searchWeb(query: string, offset = 0): Promise<Omit<WebResult, "score">[]> {
   return cached(`web:v2:${offset}:${query}`, 90_000, async () => {
     const html = await ddgHtml(query, offset);
@@ -144,7 +157,7 @@ export async function instantRelated(query: string): Promise<Omit<WebResult, "sc
           });
         }
       }
-      return out.slice(0, 10);
+      return out.slice(0, 20);
     } catch {
       return [];
     }
