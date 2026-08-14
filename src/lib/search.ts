@@ -6,6 +6,7 @@ import { isRelevant, parseQuery, type ParsedQuery } from "./query";
 import { rankAndDedupe } from "./rank";
 import { searchBingMany } from "./sources/bing";
 import { searchWeb, searchWebMany, suggest } from "./sources/ddg";
+import { displayPath, faviconFor, hostnameOf } from "./http";
 import { defineWord } from "./sources/dictionary";
 import { searchHn } from "./sources/hn";
 import { searchImages } from "./sources/images";
@@ -113,9 +114,17 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
     parsed.intent === "local" && parsed.place
       ? Array.from(new Set([lookup, `best ${lookup}`, query]))
       : [lookup];
+  const localSites =
+    parsed.intent === "local" && parsed.place
+      ? ["yelp.com", "eater.com", "infatuation.com", "timeout.com", "tripadvisor.com"].map(
+          (site) => `${lookup} site:${site}`,
+        )
+      : [];
   const webP =
     tab === "all"
-      ? Promise.all(variants.map((v) => withTimeout(searchWebMany(v, 3), 8000, []))).then((rows) => rows.flat())
+      ? Promise.all(
+          [...variants, ...localSites].map((v) => withTimeout(searchWebMany(v, v.includes("site:") ? 1 : 3), 8000, [])),
+        ).then((rows) => rows.flat())
       : Promise.resolve([]);
   const bingP =
     tab === "all"
@@ -174,7 +183,18 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
     web.push(...extra);
   }
 
-  const seed = [...web, ...bing, ...hn, ...wiki];
+  const newsAsWeb =
+    parsed.intent === "local"
+      ? news.map((item) => ({
+          title: item.title,
+          url: item.url,
+          displayUrl: displayPath(item.url),
+          snippet: item.snippet || item.source,
+          favicon: faviconFor(item.url),
+          source: hostnameOf(item.url),
+        }))
+      : [];
+  const seed = [...web, ...bing, ...hn, ...wiki, ...newsAsWeb];
   let pool = seed;
 
   if (wantAll && seed.length) {
@@ -242,7 +262,7 @@ export async function runSearch(rawQuery: string, tab: Tab = "all", page = 1): P
     };
   }
 
-  const gathered = await cached(`search:v7:${tab}:${query}`, 45_000, () => gather(query, tab));
+  const gathered = await cached(`search:v8:${tab}:${query}`, 45_000, () => gather(query, tab));
   const start = (safePage - 1) * PAGE_SIZE;
   const { allResults, ...rest } = gathered;
 

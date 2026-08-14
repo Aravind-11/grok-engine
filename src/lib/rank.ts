@@ -94,13 +94,20 @@ export function scoreResult(query: string, result: Omit<WebResult, "score">, par
   else if (words.length >= 3 && hits < 2) score -= 12;
 
   if (parsed?.intent === "local") {
-    if (LOCAL_HOSTS.some((h) => host.endsWith(h))) score += 16;
-    if (/restaurant|trattoria|osteria|italian|los angeles|\bla\b/.test(title + " " + snippet)) score += 8;
+    const placeBits = (parsed.place ?? "").split(/\s+/).filter(Boolean);
+    const hay = `${title} ${snippet} ${host} ${result.url}`.toLowerCase();
+    const hasPlace =
+      !placeBits.length ||
+      placeBits.some((p) => hay.includes(p)) ||
+      (parsed.place === "los angeles" && (hay.includes("/la") || /\bla\b/.test(hay)));
+    if (LOCAL_HOSTS.some((h) => host.endsWith(h)) && hasPlace) score += 18;
+    if (/restaurant|trattoria|osteria/.test(hay) && hasPlace) score += 10;
+    if (!hasPlace) score -= 20;
     if (result.source === "wikipedia" || host.includes("wikipedia.org")) score -= 16;
     const topicBits = (parsed.topic ?? "").split(/\s+/).filter((t) => t.length > 2 && t !== "los" && t !== "angeles");
     if (topicBits.length && !topicBits.some((t) => title.includes(t) || snippet.includes(t))) score -= 18;
-    if (/language|phrases|lessons|grammar|vocabulary|duolingo|recipes?|wikipedia/.test(title + " " + snippet + " " + host)) {
-      score -= 22;
+    if (/language|phrases|lessons|grammar|vocabulary|duolingo|recipes?|wikipedia|wordreference|dizionario/.test(hay)) {
+      score -= 28;
     }
   } else if (result.source === "wikipedia") {
     score += 2;
