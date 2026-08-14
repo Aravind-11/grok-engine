@@ -99,6 +99,9 @@ export function scoreResult(query: string, result: Omit<WebResult, "score">, par
     if (result.source === "wikipedia" || host.includes("wikipedia.org")) score -= 16;
     const topicBits = (parsed.topic ?? "").split(/\s+/).filter((t) => t.length > 2 && t !== "los" && t !== "angeles");
     if (topicBits.length && !topicBits.some((t) => title.includes(t) || snippet.includes(t))) score -= 18;
+    if (/language|phrases|lessons|grammar|vocabulary|duolingo|recipes?|wikipedia/.test(title + " " + snippet + " " + host)) {
+      score -= 22;
+    }
   } else if (result.source === "wikipedia") {
     score += 2;
   }

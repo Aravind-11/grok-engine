@@ -109,11 +109,18 @@ async function gather(query: string, tab: Tab): Promise<Gathered> {
   const instantP = resolveInstant(query);
   const knowledgeP =
     wantAll || tab === "images" ? withTimeout(getKnowledge(lookup, parsed), 4500, null) : Promise.resolve(null);
+  const variants =
+    parsed.intent === "local" && parsed.place
+      ? Array.from(new Set([lookup, `best ${lookup}`, query]))
+      : [lookup];
   const webP =
     tab === "all"
-      ? withTimeout(searchWebMany(lookup, 4), 9000, [])
+      ? Promise.all(variants.map((v) => withTimeout(searchWebMany(v, 3), 8000, []))).then((rows) => rows.flat())
       : Promise.resolve([]);
-  const bingP = tab === "all" ? withTimeout(searchBingMany(lookup), 8000, []) : Promise.resolve([]);
+  const bingP =
+    tab === "all"
+      ? Promise.all(variants.map((v) => withTimeout(searchBingMany(v), 8000, []))).then((rows) => rows.flat())
+      : Promise.resolve([]);
   const hnP =
     tab === "all" && parsed.intent !== "local" ? withTimeout(searchHn(lookup), 4500, []) : Promise.resolve([]);
   const wikiP =
@@ -235,7 +242,7 @@ export async function runSearch(rawQuery: string, tab: Tab = "all", page = 1): P
     };
   }
 
-  const gathered = await cached(`search:v6:${tab}:${query}`, 45_000, () => gather(query, tab));
+  const gathered = await cached(`search:v7:${tab}:${query}`, 45_000, () => gather(query, tab));
   const start = (safePage - 1) * PAGE_SIZE;
   const { allResults, ...rest } = gathered;
 
